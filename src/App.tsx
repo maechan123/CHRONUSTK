@@ -163,7 +163,7 @@ export default function App() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="flex-1 w-[1290px] max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-6" style={{ width: '1290px' }}>
         {activeTab === 'employees' && (
           <EmployeeRegistry
             employees={employees}
