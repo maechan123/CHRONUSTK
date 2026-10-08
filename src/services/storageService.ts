@@ -11,9 +11,9 @@ import {
 import { recalculateDayRecord } from '../utils/timeCalculations';
 
 const STORAGE_KEYS = {
-  EMPLOYEES: 'chronos_employees_v1',
-  RECORDS: 'chronos_records_v1',
-  SETTINGS: 'chronos_settings_v1',
+  EMPLOYEES: 'kairos_employees_v3',
+  RECORDS: 'kairos_records_v3',
+  SETTINGS: 'kairos_settings_v3',
 };
 
 export function loadSettings(): TimekeepingSettings {

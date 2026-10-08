@@ -200,7 +200,7 @@ export function computeEmployeeSummaryRows(
 export function exportToExcel(
   summaryRows: EmployeeSummaryRow[],
   periodLabel: string,
-  companyName = 'ChronosLedger'
+  companyName = 'KAIROS - Unified Timekeeping System'
 ): void {
   // Construct spreadsheet data array
   const data = summaryRows.map((row) => ({

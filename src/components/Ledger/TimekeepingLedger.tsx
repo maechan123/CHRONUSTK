@@ -16,6 +16,8 @@ import {
   X,
   User,
   RefreshCw,
+  ShieldAlert,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   Employee,
@@ -33,6 +35,7 @@ import {
 import { DayEditModal } from './DayEditModal';
 import { AdjustmentModal } from './AdjustmentModal';
 import { ManagementAnnouncementModal } from './ManagementAnnouncementModal';
+import { MasterlistDiscrepancyModal } from './MasterlistDiscrepancyModal';
 
 interface TimekeepingLedgerProps {
   employees: Employee[];
@@ -69,8 +72,10 @@ export const TimekeepingLedger: React.FC<TimekeepingLedgerProps> = ({
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const searchDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Management announcement modal state
+  // Management announcement & discrepancy auditor modal states
   const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
+  const [isAuditorModalOpen, setIsAuditorModalOpen] = useState(false);
+  const [employeeFilterMode, setEmployeeFilterMode] = useState<'all' | 'flagged' | 'habitual'>('all');
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -91,23 +96,99 @@ export const TimekeepingLedger: React.FC<TimekeepingLedgerProps> = ({
   const [isAdjustmentModalOpen, setIsAdjustmentModalOpen] = useState(false);
   const [syncToast, setSyncToast] = useState(false);
 
+  // Masterlist Biometric Discrepancy Map for all employees across current date range
+  const masterlistAuditMap = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        noInCount: number;
+        noOutCount: number;
+        totalMissing: number;
+        isHabitual: boolean;
+      }
+    >();
+
+    for (const emp of employees) {
+      const empRecs = records.filter(
+        (r) => r.employeeId === emp.id && r.date >= startDate && r.date <= endDate
+      );
+      let noIn = 0;
+      let noOut = 0;
+      for (const r of empRecs) {
+        if (!r.isDayOff && r.dayType !== 'day_off') {
+          if (r.isNoIn) noIn++;
+          if (r.isNoOut) noOut++;
+        }
+      }
+      map.set(emp.id, {
+        noInCount: noIn,
+        noOutCount: noOut,
+        totalMissing: noIn + noOut,
+        isHabitual: noIn + noOut >= 2,
+      });
+    }
+    return map;
+  }, [employees, records, startDate, endDate]);
+
+  const flaggedEmployeesCount = useMemo(() => {
+    let count = 0;
+    masterlistAuditMap.forEach((val) => {
+      if (val.totalMissing > 0) count++;
+    });
+    return count;
+  }, [masterlistAuditMap]);
+
+  const habitualEmployeesCount = useMemo(() => {
+    let count = 0;
+    masterlistAuditMap.forEach((val) => {
+      if (val.isHabitual) count++;
+    });
+    return count;
+  }, [masterlistAuditMap]);
+
   // Currently selected employee object
   const currentEmployee = useMemo(() => {
     return employees.find((e) => e.id === selectedEmployeeId) || employees[0] || null;
   }, [employees, selectedEmployeeId]);
 
-  // Filtered employees for typing search
+  // Audit status for currently selected employee
+  const currentEmpAudit = useMemo(() => {
+    if (!currentEmployee) return null;
+    return masterlistAuditMap.get(currentEmployee.id) || null;
+  }, [currentEmployee, masterlistAuditMap]);
+
+  // Filtered employees for typing search & filter mode
   const searchedEmployees = useMemo(() => {
-    if (!employeeSearch.trim()) return employees;
-    const q = employeeSearch.toLowerCase().trim();
-    return employees.filter(
-      (emp) =>
+    return employees.filter((emp) => {
+      const audit = masterlistAuditMap.get(emp.id);
+
+      // Quick filter tabs
+      if (employeeFilterMode === 'flagged' && (!audit || audit.totalMissing === 0)) {
+        return false;
+      }
+      if (employeeFilterMode === 'habitual' && (!audit || !audit.isHabitual)) {
+        return false;
+      }
+
+      if (!employeeSearch.trim()) return true;
+      const q = employeeSearch.toLowerCase().trim();
+
+      const matchText =
         emp.name.toLowerCase().includes(q) ||
         emp.employeeNumber.toLowerCase().includes(q) ||
         emp.department.toLowerCase().includes(q) ||
-        emp.position.toLowerCase().includes(q)
-    );
-  }, [employees, employeeSearch]);
+        emp.position.toLowerCase().includes(q);
+
+      const matchSpecial =
+        (q === 'no in' && (audit?.noInCount || 0) > 0) ||
+        (q === 'no out' && (audit?.noOutCount || 0) > 0) ||
+        (q === 'missing' && (audit?.totalMissing || 0) > 0) ||
+        (q === 'habitual' && !!audit?.isHabitual) ||
+        (q === 'bio' && (audit?.totalMissing || 0) > 0);
+
+      return matchText || matchSpecial;
+    });
+  }, [employees, employeeSearch, employeeFilterMode, masterlistAuditMap]);
 
   // Index for prev/next buttons
   const currentEmpIndex = useMemo(() => {
@@ -416,13 +497,68 @@ export const TimekeepingLedger: React.FC<TimekeepingLedgerProps> = ({
               </button>
             </div>
 
+            {/* Quick Filter Chips for Masterlist */}
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setEmployeeFilterMode('all')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  employeeFilterMode === 'all'
+                    ? 'bg-white text-slate-900 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                All ({employees.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setEmployeeFilterMode('flagged')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                  employeeFilterMode === 'flagged'
+                    ? 'bg-amber-600 text-white shadow-2xs'
+                    : 'text-amber-800 hover:bg-amber-100/60'
+                }`}
+                title="Filter list to employees with missing In/Out punches"
+              >
+                <AlertTriangle className="w-3.5 h-3.5" />
+                <span>Missing Bio ({flaggedEmployeesCount})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEmployeeFilterMode('habitual')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                  employeeFilterMode === 'habitual'
+                    ? 'bg-rose-600 text-white shadow-2xs'
+                    : 'text-rose-800 hover:bg-rose-100/60'
+                }`}
+                title="Filter list to employees who habitually don't use biometrics (≥2 missing punches)"
+              >
+                <ShieldAlert className="w-3.5 h-3.5" />
+                <span>Habitual ({habitualEmployeesCount})</span>
+              </button>
+            </div>
+
+            {/* Masterlist Auditor Button */}
+            <button
+              type="button"
+              onClick={() => setIsAuditorModalOpen(true)}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-900 border border-rose-300 transition shadow-2xs cursor-pointer shrink-0"
+              title="Open full masterlist audit table for missing punches, No-In, No-Out, and salary discrepancy risks"
+            >
+              <ShieldAlert className="w-4 h-4 text-rose-600" />
+              <span>Masterlist Auditor</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[10px] font-extrabold">
+                {flaggedEmployeesCount}
+              </span>
+            </button>
+
             {/* Type-to-Search Employee Combobox */}
             <div className="relative" ref={searchDropdownRef}>
               <div className="relative flex items-center">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
                 <input
                   type="text"
-                  placeholder="Type name, emp # or dept..."
+                  placeholder="Search staff, dept, 'no in'..."
                   value={
                     isSearchOpen
                       ? employeeSearch
@@ -447,7 +583,7 @@ export const TimekeepingLedger: React.FC<TimekeepingLedgerProps> = ({
                       setIsSearchOpen(false);
                     }
                   }}
-                  className="w-72 sm:w-80 pl-9 pr-8 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-hidden transition shadow-xs cursor-pointer"
+                  className="w-64 sm:w-72 pl-9 pr-8 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-hidden transition shadow-xs cursor-pointer"
                 />
                 {isSearchOpen && employeeSearch && (
                   <button
@@ -472,11 +608,19 @@ export const TimekeepingLedger: React.FC<TimekeepingLedgerProps> = ({
               {isSearchOpen && (
                 <div className="absolute left-0 mt-1.5 w-80 sm:w-96 bg-white rounded-2xl shadow-xl border border-slate-200 z-50 max-h-72 overflow-y-auto divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100">
                   <div className="p-2.5 bg-slate-50 text-[11px] font-semibold text-slate-500 flex justify-between items-center">
-                    <span>Search Results ({searchedEmployees.length})</span>
+                    <span>
+                      Masterlist Search ({searchedEmployees.length})
+                      {employeeFilterMode !== 'all' && (
+                        <span className="text-amber-700 ml-1 font-bold">
+                          [{employeeFilterMode === 'flagged' ? 'Missing Bio' : 'Habitual Non-Bio'}]
+                        </span>
+                      )}
+                    </span>
                     <span className="text-[10px] text-slate-400">Click to load record</span>
                   </div>
                   {searchedEmployees.map((emp) => {
                     const isSelected = emp.id === currentEmployee?.id;
+                    const audit = masterlistAuditMap.get(emp.id);
                     return (
                       <button
                         key={emp.id}
@@ -493,7 +637,11 @@ export const TimekeepingLedger: React.FC<TimekeepingLedgerProps> = ({
                         <div className="flex items-center space-x-2.5">
                           <div
                             className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs ${
-                              isSelected
+                              audit && audit.isHabitual
+                                ? 'bg-rose-600 text-white'
+                                : audit && audit.totalMissing > 0
+                                ? 'bg-amber-500 text-white'
+                                : isSelected
                                 ? 'bg-blue-600 text-white'
                                 : 'bg-slate-100 text-slate-700'
                             }`}
@@ -514,11 +662,28 @@ export const TimekeepingLedger: React.FC<TimekeepingLedgerProps> = ({
                             </div>
                           </div>
                         </div>
-                        {isSelected && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800">
-                            Selected
-                          </span>
-                        )}
+                        <div className="flex flex-col items-end gap-1">
+                          {audit && audit.totalMissing > 0 ? (
+                            <span
+                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+                                audit.isHabitual
+                                  ? 'bg-rose-100 text-rose-900 border-rose-300'
+                                  : 'bg-amber-100 text-amber-900 border-amber-300'
+                              }`}
+                            >
+                              {audit.isHabitual ? '🚨 Non-Bio' : '⚠️ Missing'}: {audit.noInCount} In, {audit.noOutCount} Out
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                              ✓ Complete
+                            </span>
+                          )}
+                          {isSelected && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-blue-100 text-blue-800">
+                              Current
+                            </span>
+                          )}
+                        </div>
                       </button>
                     );
                   })}
@@ -646,26 +811,62 @@ export const TimekeepingLedger: React.FC<TimekeepingLedgerProps> = ({
         </div>
       </div>
 
+      {/* Discrepancy & Missing Biometric Alert Banner for Current Employee */}
+      {currentEmpAudit && currentEmpAudit.totalMissing > 0 && (
+        <div className="bg-amber-50/90 border-2 border-amber-400 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-xs animate-in fade-in">
+          <div className="flex items-start sm:items-center space-x-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-2xs">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <span className="font-extrabold text-amber-950 text-sm">
+                  ⚠️ Missing Biometric Punches Detected ({currentEmpAudit.totalMissing} unresolved)
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-200 text-amber-900 border border-amber-300">
+                  Salary Risk Alert
+                </span>
+              </div>
+              <p className="text-amber-900 text-xs mt-0.5">
+                <strong>{currentEmployee?.name}</strong> has{' '}
+                <strong className="underline text-amber-950">{currentEmpAudit.noInCount} No-In</strong> and{' '}
+                <strong className="underline text-amber-950">{currentEmpAudit.noOutCount} No-Out</strong> punch(es) in this cutoff ({startDate} to {endDate}). Unverified missing punches cause automated undertime deductions or salary disputes.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsAuditorModalOpen(true)}
+              className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition shadow-2xs cursor-pointer flex items-center space-x-1"
+            >
+              <ShieldAlert className="w-3.5 h-3.5" />
+              <span>Audit All Masterlist Staff</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Fortnight Ledger Table */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-200 text-xs">
+        <div className="w-full overflow-hidden">
+          <table className="w-full divide-y divide-slate-200 text-xs">
             {/* Table Header */}
-            <thead className="bg-slate-50 text-slate-600 uppercase font-semibold tracking-wider">
+            <thead className="bg-slate-50 text-slate-600 uppercase font-semibold tracking-wider text-[11px]">
               <tr>
-                <th className="px-3 py-3 text-left">Date / Day</th>
-                <th className="px-3 py-3 text-left">Day Type</th>
-                <th className="px-3 py-3 text-left">Schedule</th>
-                <th className="px-3 py-3 text-center">Time 1 (In / Out)</th>
-                <th className="px-3 py-3 text-center">Time 2 (In / Out)</th>
-                <th className="px-3 py-3 text-center">OT Punches</th>
-                <th className="px-3 py-3 text-right">Regular Hrs</th>
-                <th className="px-3 py-3 text-right">Late</th>
-                <th className="px-3 py-3 text-right">UT</th>
-                <th className="px-3 py-3 text-right">OT</th>
-                <th className="px-3 py-3 text-right">NDF</th>
-                <th className="px-3 py-3 text-left">Adjustments / Remarks</th>
-                <th className="px-2 py-3 text-center">Actions</th>
+                <th className="px-2 py-2.5 text-left">Date / Day</th>
+                <th className="px-1.5 py-2.5 text-left">Day Type</th>
+                <th className="px-1.5 py-2.5 text-left">Schedule</th>
+                <th className="px-1.5 py-2.5 text-center">Time 1 (In / Out)</th>
+                <th className="px-1.5 py-2.5 text-center">Time 2 (In / Out)</th>
+                <th className="px-1.5 py-2.5 text-center">OT Punches</th>
+                <th className="px-1.5 py-2.5 text-right">Regular</th>
+                <th className="px-1.5 py-2.5 text-right">Late</th>
+                <th className="px-1.5 py-2.5 text-right">UT</th>
+                <th className="px-1.5 py-2.5 text-right">OT</th>
+                <th className="px-1.5 py-2.5 text-right">NDF</th>
+                <th className="px-2 py-2.5 text-left">Adjustments &amp; Remarks</th>
+                <th className="px-1 py-2.5 text-center">Actions</th>
               </tr>
             </thead>
 
@@ -674,9 +875,16 @@ export const TimekeepingLedger: React.FC<TimekeepingLedgerProps> = ({
               {ledgerRows.map((row) => {
                 const hasIssues =
                   row.isAbsent || row.isLate || row.isUndertime || row.isNoIn || row.isNoOut;
+                const hasMissingPunch = row.isNoIn || row.isNoOut;
 
-                // Tint row if problem day or rest day
-                const rowBg = hasIssues
+                // Prominently highlight rows with Missing Punches (No In or No Out)
+                const rowBg = hasMissingPunch
+                  ? row.isNoIn && row.isNoOut
+                    ? 'bg-rose-100/90 border-l-4 border-l-rose-600 shadow-xs ring-1 ring-rose-300'
+                    : row.isNoIn
+                    ? 'bg-amber-100/80 border-l-4 border-l-amber-500 shadow-xs ring-1 ring-amber-300'
+                    : 'bg-rose-100/80 border-l-4 border-l-rose-500 shadow-xs ring-1 ring-rose-300'
+                  : hasIssues
                   ? 'bg-rose-50/80 border-l-4 border-l-rose-500 shadow-xs'
                   : row.isDayOff || row.dayType === 'day_off'
                   ? 'bg-slate-50/50'
@@ -685,23 +893,23 @@ export const TimekeepingLedger: React.FC<TimekeepingLedgerProps> = ({
                 return (
                   <tr key={row.date} className={`${rowBg} transition-colors`}>
                     {/* Date / Day */}
-                    <td className="px-3 py-2.5 whitespace-nowrap">
-                      <div className="font-mono font-bold text-slate-800">{row.date}</div>
-                      <div className="text-[11px] text-slate-500 font-sans">{row.dayOfWeek}</div>
+                    <td className="px-2 py-2 whitespace-nowrap">
+                      <div className="font-mono font-bold text-slate-800 text-[11px]">{row.date}</div>
+                      <div className="text-[10px] text-slate-500 font-sans">{row.dayOfWeek}</div>
                     </td>
 
                     {/* Day Type & Leave */}
-                    <td className="px-3 py-2.5 whitespace-nowrap">
-                      <div className="flex flex-col gap-1 items-start">
+                    <td className="px-1.5 py-2 whitespace-nowrap">
+                      <div className="flex flex-col gap-0.5 items-start">
                         {renderDayTypeBadge(row)}
                         {row.leaveType !== 'none' && renderLeaveTypeBadge(row.leaveType)}
                       </div>
                     </td>
 
                     {/* Schedule */}
-                    <td className="px-3 py-2.5 whitespace-nowrap font-mono text-slate-700">
+                    <td className="px-1.5 py-2 whitespace-nowrap font-mono text-[11px] text-slate-700">
                       {row.isDayOff || row.dayType === 'day_off' ? (
-                        <span className="text-slate-400 italic font-sans text-[11px]">
+                        <span className="text-slate-400 italic font-sans text-[10px]">
                           REST DAY
                         </span>
                       ) : (
@@ -712,11 +920,11 @@ export const TimekeepingLedger: React.FC<TimekeepingLedgerProps> = ({
                           {row.isFullDayCredit && (
                             <div className="mt-0.5">
                               <span
-                                className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 inline-flex items-center gap-1 font-sans"
+                                className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 inline-flex items-center gap-0.5 font-sans"
                                 title={row.fullDayCreditReason || 'Management announcement: paid as full day duty'}
                               >
                                 <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
-                                Mgmt Paid {row.fullDayCreditHours || 8}h
+                                Paid {row.fullDayCreditHours || 8}h
                               </span>
                             </div>
                           )}
@@ -725,10 +933,10 @@ export const TimekeepingLedger: React.FC<TimekeepingLedgerProps> = ({
                               <button
                                 type="button"
                                 onClick={() => handleToggleFullDayCredit(row)}
-                                className="text-[10px] text-emerald-700 hover:text-emerald-900 font-sans font-medium hover:underline flex items-center gap-0.5 cursor-pointer"
+                                className="text-[9.5px] text-emerald-700 hover:text-emerald-900 font-sans font-medium hover:underline flex items-center gap-0.5 cursor-pointer"
                                 title="Click to apply Saturday Management Memo (Paid whole 8h duty without undertime)"
                               >
-                                <Sparkles className="w-2.5 h-2.5 text-emerald-600" /> + Credit 8h Duty
+                                <Sparkles className="w-2.5 h-2.5 text-emerald-600" /> + Credit 8h
                               </button>
                             </div>
                           )}
@@ -737,42 +945,66 @@ export const TimekeepingLedger: React.FC<TimekeepingLedgerProps> = ({
                     </td>
 
                     {/* Time 1 */}
-                    <td className="px-3 py-2.5 whitespace-nowrap text-center font-mono">
+                    <td className="px-1.5 py-2 whitespace-nowrap text-center font-mono text-[11px]">
                       {row.isAbsent ? (
-                        <span className="text-[10px] font-bold text-rose-700 bg-rose-100/90 px-2 py-0.5 rounded border border-rose-300">
+                        <span className="text-[10px] font-bold text-rose-700 bg-rose-100/90 px-1.5 py-0.5 rounded border border-rose-300">
                           ABSENT
                         </span>
+                      ) : row.isNoIn ? (
+                        <div className="flex items-center justify-center gap-1">
+                          <span
+                            className="inline-flex items-center gap-0.5 font-black text-[9.5px] text-amber-950 bg-amber-300 border border-amber-500 px-1.5 py-0.5 rounded shadow-2xs tracking-wide animate-pulse"
+                            title="MISSING PUNCH: No In recorded in biometrics. Needs HR verification to prevent salary discrepancy."
+                          >
+                            ⚠️ NO IN
+                          </span>
+                          {row.time1Out && (
+                            <>
+                              <span className="text-slate-400">|</span>
+                              <span className="text-slate-600 font-semibold">{row.time1Out}</span>
+                            </>
+                          )}
+                        </div>
                       ) : row.time1In || row.time1Out ? (
                         <div className="text-slate-800">
                           <span
                             className={
                               row.isLate
                                 ? 'text-rose-600 font-bold bg-rose-100 px-1 py-0.5 rounded'
-                                : row.isNoIn
-                                ? 'text-rose-700 font-bold bg-rose-100 px-1.5 py-0.5 rounded border border-rose-300'
                                 : 'text-slate-800'
                             }
                           >
-                            {row.time1In || (row.isNoIn ? 'NO IN' : '--:--')}
+                            {row.time1In || '--:--'}
                           </span>
                           <span className="text-slate-400 mx-1">|</span>
                           <span className="text-slate-600">{row.time1Out || '--:--'}</span>
                         </div>
-                      ) : row.isNoIn ? (
-                        <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded border border-rose-300">
-                          NO IN
-                        </span>
                       ) : (
                         <span className="text-slate-300">--</span>
                       )}
                     </td>
 
                     {/* Time 2 */}
-                    <td className="px-3 py-2.5 whitespace-nowrap text-center font-mono">
+                    <td className="px-1.5 py-2 whitespace-nowrap text-center font-mono text-[11px]">
                       {row.isAbsent ? (
-                        <span className="text-[10px] font-bold text-rose-700 bg-rose-100/90 px-2 py-0.5 rounded border border-rose-300">
+                        <span className="text-[10px] font-bold text-rose-700 bg-rose-100/90 px-1.5 py-0.5 rounded border border-rose-300">
                           ABSENT
                         </span>
+                      ) : row.isNoOut ? (
+                        <div className="flex items-center justify-center gap-1">
+                          {row.time2In && (
+                            <>
+                              <span className="text-slate-600 font-semibold">{row.time2In}</span>
+                              <span className="text-slate-400">|</span>
+                            </>
+                          )}
+                          <span
+                            className="inline-flex items-center gap-0.5 font-black text-[9.5px] text-rose-950 bg-rose-300 border border-rose-500 px-1.5 py-0.5 rounded shadow-2xs tracking-wide animate-pulse"
+                            title="MISSING PUNCH: No Out recorded in biometrics. Needs HR verification to prevent salary discrepancy."
+                          >
+                            ⚠️ NO OUT
+                          </span>
+                        </div>
                       ) : row.time2In || row.time2Out ? (
                         <div className="text-slate-800">
                           <span className="text-slate-600">{row.time2In || '--:--'}</span>
@@ -781,25 +1013,19 @@ export const TimekeepingLedger: React.FC<TimekeepingLedgerProps> = ({
                             className={
                               row.isUndertime
                                 ? 'text-rose-600 font-bold bg-rose-100 px-1 py-0.5 rounded'
-                                : row.isNoOut
-                                ? 'text-rose-700 font-bold bg-rose-100 px-1.5 py-0.5 rounded border border-rose-300'
                                 : 'text-slate-800'
                             }
                           >
-                            {row.time2Out || (row.isNoOut ? 'NO OUT' : '--:--')}
+                            {row.time2Out || '--:--'}
                           </span>
                         </div>
-                      ) : row.isNoOut ? (
-                        <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded border border-rose-300">
-                          NO OUT
-                        </span>
                       ) : (
                         <span className="text-slate-300">--</span>
                       )}
                     </td>
 
                     {/* OT Punches */}
-                    <td className="px-3 py-2.5 whitespace-nowrap text-center font-mono">
+                    <td className="px-1.5 py-2 whitespace-nowrap text-center font-mono text-[11px]">
                       {row.otIn || row.otOut ? (
                         <div className="text-emerald-700 font-medium">
                           {row.otIn || '--'} - {row.otOut || '--'}
@@ -810,14 +1036,14 @@ export const TimekeepingLedger: React.FC<TimekeepingLedgerProps> = ({
                     </td>
 
                     {/* Regular Hours (H:MM:SS) */}
-                    <td className="px-3 py-2.5 whitespace-nowrap text-right font-mono font-medium text-slate-800">
+                    <td className="px-1.5 py-2 whitespace-nowrap text-right font-mono font-medium text-[11px] text-slate-800">
                       {formatDurationHms(row.regularSeconds)}
                     </td>
 
                     {/* Late (H:MM:SS) - Red Alert */}
-                    <td className="px-3 py-2.5 whitespace-nowrap text-right font-mono">
+                    <td className="px-1.5 py-2 whitespace-nowrap text-right font-mono text-[11px]">
                       {row.lateSeconds > 0 ? (
-                        <span className="inline-flex items-center font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded border border-rose-300 shadow-xs">
+                        <span className="inline-flex items-center font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded border border-rose-300">
                           {formatDurationHms(row.lateSeconds)}
                         </span>
                       ) : (
@@ -826,9 +1052,9 @@ export const TimekeepingLedger: React.FC<TimekeepingLedgerProps> = ({
                     </td>
 
                     {/* UT (Undertime) (H:MM:SS) - Red Alert */}
-                    <td className="px-3 py-2.5 whitespace-nowrap text-right font-mono">
+                    <td className="px-1.5 py-2 whitespace-nowrap text-right font-mono text-[11px]">
                       {row.utSeconds > 0 ? (
-                        <span className="inline-flex items-center font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded border border-rose-300 shadow-xs">
+                        <span className="inline-flex items-center font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded border border-rose-300">
                           {formatDurationHms(row.utSeconds)}
                         </span>
                       ) : (
@@ -837,11 +1063,11 @@ export const TimekeepingLedger: React.FC<TimekeepingLedgerProps> = ({
                     </td>
 
                     {/* OT (Overtime) (H:MM:SS) */}
-                    <td className="px-3 py-2.5 whitespace-nowrap text-right font-mono">
+                    <td className="px-1.5 py-2 whitespace-nowrap text-right font-mono text-[11px]">
                       {row.otSeconds > 0 ? (
-                        <div className="flex flex-col items-end gap-1">
+                        <div className="flex flex-col items-end gap-0.5">
                           <span
-                            className={`inline-flex items-center font-semibold px-1.5 py-0.5 rounded text-[11px] ${
+                            className={`inline-flex items-center font-semibold px-1 py-0.5 rounded text-[10px] ${
                               row.isOtApproved
                                 ? 'text-emerald-700 bg-emerald-50 border border-emerald-200'
                                 : 'text-amber-700 bg-amber-50 border border-amber-200'
@@ -852,7 +1078,7 @@ export const TimekeepingLedger: React.FC<TimekeepingLedgerProps> = ({
                           <button
                             type="button"
                             onClick={() => handleToggleApproveOt(row)}
-                            className={`text-[9px] px-1.5 py-0.5 rounded font-sans font-semibold transition cursor-pointer ${
+                            className={`text-[9px] px-1 py-0.5 rounded font-sans font-semibold transition cursor-pointer ${
                               row.isOtApproved
                                 ? 'bg-emerald-600 text-white hover:bg-emerald-700'
                                 : 'bg-amber-100 text-amber-900 hover:bg-emerald-600 hover:text-white'
@@ -863,7 +1089,7 @@ export const TimekeepingLedger: React.FC<TimekeepingLedgerProps> = ({
                                 : 'Click to Approve OT for payment'
                             }
                           >
-                            {row.isOtApproved ? '✓ Approved' : '+ Approve OT'}
+                            {row.isOtApproved ? '✓ Appr' : '+ Approve'}
                           </button>
                         </div>
                       ) : (
@@ -872,9 +1098,9 @@ export const TimekeepingLedger: React.FC<TimekeepingLedgerProps> = ({
                     </td>
 
                     {/* NDF (Night Diff 10PM-6AM) (H:MM:SS) */}
-                    <td className="px-3 py-2.5 whitespace-nowrap text-right font-mono">
+                    <td className="px-1.5 py-2 whitespace-nowrap text-right font-mono text-[11px]">
                       {row.ndfSeconds > 0 ? (
-                        <span className="inline-flex items-center font-semibold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">
+                        <span className="inline-flex items-center font-semibold text-indigo-700 bg-indigo-50 px-1 py-0.5 rounded">
                           {formatDurationHms(row.ndfSeconds)}
                         </span>
                       ) : (
@@ -883,36 +1109,36 @@ export const TimekeepingLedger: React.FC<TimekeepingLedgerProps> = ({
                     </td>
 
                     {/* Adjustments & Remarks */}
-                    <td className="px-3 py-2.5 text-slate-600 min-w-[210px]">
-                      {/* Issue Tags in Vibrant Red Badges */}
-                      <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                    <td className="px-2 py-2 text-slate-600 text-[11px]">
+                      {/* Issue Tags in Vibrant Red Badges & Missing Punch Alerts */}
+                      <div className="flex flex-wrap items-center gap-1 mb-1">
                         {row.isAbsent && (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-rose-600 text-white shadow-xs uppercase tracking-wider flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
+                          <span className="px-1.5 py-0.5 rounded text-[9.5px] font-extrabold bg-rose-600 text-white shadow-2xs uppercase tracking-wider flex items-center gap-0.5">
+                            <span className="w-1 h-1 rounded-full bg-white animate-pulse"></span>
                             ABSENT
                           </span>
                         )}
                         {row.isNoIn && (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-rose-600 text-white shadow-xs uppercase tracking-wider flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
-                            NO IN
+                          <span className="px-1.5 py-0.5 rounded text-[9.5px] font-black bg-amber-400 text-amber-950 border border-amber-600 shadow-2xs uppercase tracking-wider flex items-center gap-0.5 animate-pulse">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-950 animate-ping"></span>
+                            ⚠️ NO IN
                           </span>
                         )}
                         {row.isNoOut && (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-rose-600 text-white shadow-xs uppercase tracking-wider flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
-                            NO OUT
+                          <span className="px-1.5 py-0.5 rounded text-[9.5px] font-black bg-rose-600 text-white border border-rose-700 shadow-2xs uppercase tracking-wider flex items-center gap-0.5 animate-pulse">
+                            <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping"></span>
+                            ⚠️ NO OUT
                           </span>
                         )}
-                        {row.isUndertime && (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-rose-600 text-white shadow-xs uppercase tracking-wider flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
+                        {row.isUndertime && !row.isNoOut && (
+                          <span className="px-1.5 py-0.5 rounded text-[9.5px] font-extrabold bg-rose-600 text-white shadow-2xs uppercase tracking-wider flex items-center gap-0.5">
+                            <span className="w-1 h-1 rounded-full bg-white animate-pulse"></span>
                             UNDERTIME
                           </span>
                         )}
-                        {row.isLate && (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-rose-600 text-white shadow-xs uppercase tracking-wider flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
+                        {row.isLate && !row.isNoIn && (
+                          <span className="px-1.5 py-0.5 rounded text-[9.5px] font-extrabold bg-rose-600 text-white shadow-2xs uppercase tracking-wider flex items-center gap-0.5">
+                            <span className="w-1 h-1 rounded-full bg-white animate-pulse"></span>
                             LATE
                           </span>
                         )}
@@ -920,11 +1146,11 @@ export const TimekeepingLedger: React.FC<TimekeepingLedgerProps> = ({
 
                       {/* Adjustments list */}
                       {row.adjustments && row.adjustments.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mb-1">
+                        <div className="flex flex-wrap gap-1 mb-0.5">
                           {row.adjustments.map((adj) => (
                             <span
                               key={adj.id}
-                              className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                              className={`px-1.5 py-0.5 rounded text-[9.5px] font-semibold border ${
                                 adj.action === 'payment'
                                   ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                                   : 'bg-rose-50 text-rose-800 border-rose-200'
@@ -942,14 +1168,14 @@ export const TimekeepingLedger: React.FC<TimekeepingLedgerProps> = ({
 
                       {/* Remarks */}
                       {row.remarks && (
-                        <span className="text-[11px] text-slate-500 italic block truncate max-w-xs">
+                        <span className="text-[10px] text-slate-500 italic block truncate max-w-[200px]" title={row.remarks}>
                           {row.remarks}
                         </span>
                       )}
                     </td>
 
                     {/* Actions */}
-                    <td className="px-2 py-2.5 whitespace-nowrap text-center space-x-1">
+                    <td className="px-1 py-2 whitespace-nowrap text-center space-x-0.5">
                       <button
                         type="button"
                         onClick={() => handleToggleFullDayCredit(row)}
@@ -1170,6 +1396,17 @@ export const TimekeepingLedger: React.FC<TimekeepingLedgerProps> = ({
         existingRecords={records}
         settings={settings}
         onApplyAnnouncement={handleBatchAnnouncementApplied}
+      />
+
+      {/* Masterlist Biometric Discrepancy & Missing Punch Auditor Modal */}
+      <MasterlistDiscrepancyModal
+        isOpen={isAuditorModalOpen}
+        onClose={() => setIsAuditorModalOpen(false)}
+        employees={employees}
+        records={records}
+        startDate={startDate}
+        endDate={endDate}
+        onSelectEmployee={(empId) => setSelectedEmployeeId(empId)}
       />
     </div>
   );

@@ -32,7 +32,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   return (
     <header className="bg-slate-900 border-b border-slate-800 text-white sticky top-0 z-30 shadow-md">
-      <div className="w-[1283px] max-w-full mx-auto px-4 sm:px-6 lg:px-8" style={{ width: '1283px' }}>
+      <div className="w-full max-w-7xl xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo & App Info */}
           <div className="flex items-center space-x-3">
@@ -41,9 +41,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
             <div>
               <div className="flex items-center space-x-2">
-                <span className="font-bold text-lg tracking-tight text-white">ChronosLedger</span>
+                <span className="font-bold text-lg tracking-tight text-white">KAIROS</span>
                 <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                  ERP Timekeeping
+                  Unified Timekeeping System
                 </span>
               </div>
               <p className="text-xs text-slate-400">

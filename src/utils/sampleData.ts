@@ -238,7 +238,7 @@ export function generateSeedFortnightRecords(
             t1Out = '12:00:00';
             t2In = '13:00:00';
             t2Out = '15:00:00';
-            remarks = 'Traffic along EDSA';
+            remarks = 'Late: Traffic along EDSA';
           } else if (d === 4) {
             // Overtime 2 hours (15:00 to 17:00)
             t1In = '05:56:00';
@@ -255,10 +255,20 @@ export function generateSeedFortnightRecords(
             t2In = '13:00:00';
             t2Out = '14:15:00';
             remarks = 'Left early - dental appointment';
+          } else if (d === 8) {
+            // Sample: NO IN PUNCH (missed morning tap in, only tapped afternoon out)
+            t1In = '';
+            t1Out = '12:00:00';
+            t2In = '13:00:00';
+            t2Out = '15:00:00';
+            remarks = 'NO IN: Missed morning biometrics tap in - pending supervisor verification';
           } else if (d === 11) {
-            // No-Out punch
+            // Sample: NO OUT PUNCH (tapped in at 05:54, forgot shift out)
             t1In = '05:54:00';
-            remarks = 'Forgot to tap out during power transfer';
+            t1Out = '';
+            t2In = '';
+            t2Out = '';
+            remarks = 'NO OUT: Forgot evening biometrics tap during system transfer';
           } else if (d === 13) {
             // Sick Leave
             leaveType = 'sl';
@@ -269,6 +279,87 @@ export function generateSeedFortnightRecords(
             t1Out = '12:00:00';
             t2In = '13:00:00';
             t2Out = '15:02:00';
+          }
+        } else if (emp.employeeNumber === '1004') {
+          // Roberto Carlos Garcia (Housekeeping - Room Attendant)
+          // Sample: Occasional missing biometric punch
+          if (d === 3) {
+            // NO IN
+            t1In = '';
+            t1Out = '12:00:00';
+            t2In = '13:00:00';
+            t2Out = '17:00:00';
+            remarks = 'NO IN: Room attendant missed morning bio log';
+          } else if (d === 6) {
+            // NO OUT
+            t1In = '08:00:00';
+            t1Out = '12:00:00';
+            t2In = '13:00:00';
+            t2Out = '';
+            remarks = 'NO OUT: Missed afternoon shift out bio log';
+          } else if (d === 14) {
+            t1In = '08:00:00';
+            t1Out = '12:00:00';
+            t2In = '13:00:00';
+            t2Out = '16:00:00';
+            remarks = 'Undertime: Emergency family matter';
+          } else {
+            t1In = '07:58:00';
+            t1Out = '12:00:00';
+            t2In = '13:00:00';
+            t2Out = '17:01:00';
+          }
+        } else if (emp.employeeNumber === '1007') {
+          // Eduardo Lim (Maintenance Technician)
+          // Sample: Frequently does NOT use bio (roving repairs / field duties) - Habitual Missing Bio
+          if (d === 2) {
+            // NO IN
+            t1In = '';
+            t1Out = '12:00:00';
+            t2In = '13:00:00';
+            t2Out = '17:00:00';
+            remarks = 'NO IN: Dispatched directly to chiller plant repair';
+          } else if (d === 5) {
+            // NO OUT
+            t1In = '08:00:00';
+            t1Out = '12:00:00';
+            t2In = '';
+            t2Out = '';
+            remarks = 'NO OUT: Emergency generator servicing past shift';
+          } else if (d === 8) {
+            // NO IN
+            t1In = '';
+            t1Out = '12:00:00';
+            t2In = '13:00:00';
+            t2Out = '17:00:00';
+            remarks = 'NO IN: Roving maintenance duty without tap in';
+          } else if (d === 12) {
+            // NO OUT
+            t1In = '08:05:00';
+            t1Out = '';
+            t2In = '';
+            t2Out = '';
+            remarks = 'NO OUT: Forgot shift out log';
+          } else {
+            t1In = '08:00:00';
+            t1Out = '12:00:00';
+            t2In = '13:00:00';
+            t2Out = '17:00:00';
+          }
+        } else if (emp.employeeNumber === '1010') {
+          // Crisanto Bautista (Security)
+          if (d === 8) {
+            // NO OUT
+            t1In = '18:00:00';
+            t1Out = '';
+            t2In = '';
+            t2Out = '';
+            remarks = 'NO OUT: Shift turnover completed without bio log';
+          } else {
+            t1In = '17:55:00';
+            t1Out = '00:00:00';
+            t2In = '01:00:00';
+            t2Out = '06:00:00';
           }
         } else if (emp.employeeNumber === '1002') {
           // Juan Miguel Dela Cruz (Night Auditor 22:00 - 07:00) - Strong NDF
