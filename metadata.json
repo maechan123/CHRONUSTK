@@ -1,0 +1,8 @@
+{
+  "name": "Remix ChronosLedger - Enterprise Timekeeping \u0026 Payroll Ledger",
+  "description": "Comprehensive employee attendance ledger, biometric punch import, fortnight timekeeping, Philippine labor-standard NDF/OT/holidays calculation, and consolidated payroll summary reports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
